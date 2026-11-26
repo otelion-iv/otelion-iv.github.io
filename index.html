@@ -432,14 +432,13 @@ async function sendAbsen(kode, p) {
 // ====== JADWAL LOKAL (supaya hasil scan instan; server tetap memvalidasi di belakang) ======
 let CFG = LS.get('tiketCfg', null);
 async function loadCfg() { try { const r = await api({ action: 'cfg' }); if (r && r.jadwal) { CFG = r; LS.set('tiketCfg', CFG); } } catch (e) {} }
-setInterval(() => { if (!$('app').classList.contains('hide')) loadCfg(); }, 600000);
+setInterval(() => { if (!$('app').classList.contains('hide')) loadCfg(); }, 60000);
 const pad2 = n => ('0' + n).slice(-2);
 function hariIdx() {
   if (!CFG || !CFG.tanggal) return -1;
   const d = new Date(); const t = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
-  let i = CFG.tanggal.indexOf(t);
-  if (i < 0 && CFG.hari >= 0 && CFG.tgl === t) i = CFG.hari;
-  return i;
+  if (CFG.tgl === t && typeof CFG.hari === 'number') return CFG.hari;   // ikut server (termasuk Hari uji)
+  return CFG.tanggal.indexOf(t);
 }
 function absenLokal(p, kode) {
   const kat = String(p.kategori || '').trim(); const out = { nama: p.nama, kategori: kat, kode };
