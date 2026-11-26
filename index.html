@@ -187,7 +187,7 @@ async function syncDB() {
     const next = {};
     (r.peserta || []).forEach(p => {
       const old = DB[p.kode];
-      next[p.kode] = { nama: p.nama, kategori: p.kategori, status: p.status, waktu: p.waktu || '', pulang: p.pulang || '' };
+      next[p.kode] = { nama: p.nama, kategori: p.kategori, status: p.status, waktu: p.waktu || '', pulang: p.pulang || '', siang: (old && old.siang) || '' };
       if (pending.has(p.kode) && old) { next[p.kode].status = old.status; next[p.kode].waktu = old.waktu; next[p.kode].pulang = old.pulang || next[p.kode].pulang; }
     });
     DB = next; saveDB(); lastSync = Date.now();
@@ -219,9 +219,14 @@ async function flush() {
   while (QUEUE.length) {
     const q = QUEUE[0];
     let r;
-    try { r = await api({ action: q.act === 'pulang' ? 'pulang' : 'checkin', kode: q.kode, pin: PIN }); } catch (e) { break; }
+    try { r = await api({ action: q.act === 'absen' ? 'absen' : q.act === 'pulang' ? 'pulang' : 'checkin', kode: q.kode, pin: PIN }); } catch (e) { break; }
     if (r && r.status === 'pin') { sending = false; return showPin('PIN berubah, masukkan lagi.'); }
     QUEUE.shift(); saveQ();
+    if (r && q.act === 'absen' && r.status !== 'ok' && r.status !== 'dup') {
+      toast('⚠ ' + (r.nama || q.kode) + ' ditolak server (' + r.status + (r.jam ? ' ' + r.jam : '') + '). Cek jam HP loket.');
+      const d = DB[q.kode];
+      if (d) { if (q.sesi === 'masuk') { d.status = 'Belum'; d.waktu = ''; } else if (q.sesi === 'siang') d.siang = ''; else if (q.sesi === 'pulang') d.pulang = ''; saveDB(); renderStats(); }
+    }
     if (r && q.act === 'pulang' && r.status === 'belum') toast('⚠ Absen pulang ' + (r.nama || q.kode) + ' ditolak server: belum pukul ' + r.jam);
     if (r && q.act !== 'pulang' && r.status === 'dup' && r.waktu && !String(r.waktu).startsWith(q.jam)) {
       toast('⚠ ' + (r.nama || q.kode) + ' ternyata sudah masuk lebih dulu (' + r.waktu + ') di perangkat lain');
@@ -248,7 +253,7 @@ function beep(f, ms) {
 }
 let tt; function toast(t) { const e = $('toast'); e.textContent = t; e.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => e.classList.remove('show'), 4500); }
 function showPin(msg) { $('app').classList.add('hide'); $('nav').classList.add('hide'); $('pinBox').classList.remove('hide'); $('pinMsg').textContent = msg || ''; }
-function showApp() { $('pinBox').classList.add('hide'); $('app').classList.remove('hide'); $('nav').classList.remove('hide'); renderStats(); renderSync(); syncDB(); flush(); }
+function showApp() { $('pinBox').classList.add('hide'); $('app').classList.remove('hide'); $('nav').classList.remove('hide'); renderStats(); renderSync(); syncDB(); loadCfg(); flush(); }
 
 $('pinForm').onsubmit = e => {
   e.preventDefault();
@@ -352,7 +357,7 @@ function catatPulang(p, kode) {
 function tutupVer(ok) {
   if (!VER) return; const { p, kode } = VER; VER = null;
   $('ver').classList.add('hide'); last = kode; lastAt = Date.now();
-  if (ok) { sendAbsen(kode, p); } else { renderAbsen({ status: 'tolak', nama: p && p.nama, kategori: p && p.kategori }, kode, p); api({ action: 'live', kode, pin: PIN, st: 'tolak' }).catch(() => {}); const kirimTolak = (n) => api({ action: 'tolak', kode, pin: PIN }).catch(() => { if (n < 3) setTimeout(() => kirimTolak(n + 1), 3000); }); kirimTolak(0); }
+  if (ok) { if (CFG && CFG.jadwal) absenCepat(p, kode); else sendAbsen(kode, p); } else { renderAbsen({ status: 'tolak', nama: p && p.nama, kategori: p && p.kategori }, kode, p); api({ action: 'live', kode, pin: PIN, st: 'tolak' }).catch(() => {}); const kirimTolak = (n) => api({ action: 'tolak', kode, pin: PIN }).catch(() => { if (n < 3) setTimeout(() => kirimTolak(n + 1), 3000); }); kirimTolak(0); }
 }
 $('vYes').onclick = () => tutupVer(true);
 $('vNo').onclick = () => tutupVer(false);
@@ -374,6 +379,7 @@ function renderAbsen(r, kode, p) {
     DB[kode] = DB[kode] || { nama, kategori: kat }; DB[kode].nama = nama; DB[kode].kategori = kat;
     if (r.sesi === 'masuk') { DB[kode].status = 'Sudah masuk'; DB[kode].waktu = r.waktu; }
     if (r.sesi === 'pulang') DB[kode].pulang = r.waktu;
+    if (r.sesi === 'siang') DB[kode].siang = r.waktu;
     saveDB();
   } else if (st === 'dup') {
     hk = 'dup'; box.className = 'res dup flash';
@@ -422,6 +428,46 @@ async function sendAbsen(kode, p) {
     last = '';
   }
 }
+// ====== JADWAL LOKAL (supaya hasil scan instan; server tetap memvalidasi di belakang) ======
+let CFG = LS.get('tiketCfg', null);
+async function loadCfg() { try { const r = await api({ action: 'cfg' }); if (r && r.jadwal) { CFG = r; LS.set('tiketCfg', CFG); } } catch (e) {} }
+setInterval(() => { if (!$('app').classList.contains('hide')) loadCfg(); }, 600000);
+const pad2 = n => ('0' + n).slice(-2);
+function hariIdx() {
+  if (!CFG || !CFG.tanggal) return -1;
+  const d = new Date(); const t = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  let i = CFG.tanggal.indexOf(t);
+  if (i < 0 && CFG.hari >= 0 && CFG.tgl === t) i = CFG.hari;
+  return i;
+}
+function absenLokal(p, kode) {
+  const kat = String(p.kategori || '').trim(); const out = { nama: p.nama, kategori: kat, kode };
+  const di = hariIdx(); if (di < 0) { out.status = 'luar'; return out; }
+  const J = ((CFG.jadwal || {})[kat] || [])[di] || {};
+  const def = ['masuk', 'siang', 'pulang'].filter(j => J[j]);
+  if (!def.length) { out.status = 'takada'; return out; }
+  const now = sekarang();
+  const ck = j => { const w = J[j], s = menit(w[0]), e = w[1] != null ? menit(w[1]) : null; if (now < s) return { code: 'belum', jam: w[0] }; if (e != null && now > e) return { code: 'lewat' }; return { ok: true }; };
+  let active = null; def.forEach(j => { if (ck(j).ok) active = j; });
+  if (!active) {
+    if (J.masuk && ck('masuk').code === 'lewat' && p.status !== 'Sudah masuk') { out.status = 'lewat'; out.sesi = 'masuk'; return out; }
+    let up = null; def.forEach(j => { const c = ck(j); if (c.code === 'belum' && (!up || menit(c.jam) < menit(up.jam))) up = { jam: c.jam, sesi: j }; });
+    if (up) { out.status = 'belum'; out.sesi = up.sesi; out.jam = up.jam; return out; }
+    out.status = 'lewat'; return out;
+  }
+  out.sesi = active;
+  const prev = active === 'masuk' ? (p.status === 'Sudah masuk' ? p.waktu : '') : active === 'siang' ? (p.siang || '') : (p.pulang || '');
+  if (prev) { out.status = 'dup'; out.waktu = prev; return out; }
+  out.status = 'ok'; out.waktu = jam(); return out;
+}
+function absenCepat(p, kode) {
+  const r = absenLokal(p, kode);
+  renderAbsen(r, kode, p);
+  if (r.status === 'ok') {
+    api({ action: 'live', kode, pin: PIN, st: r.sesi === 'pulang' ? 'pulang' : 'ok' }).catch(() => {});
+    QUEUE.push({ kode, jam: r.waktu, act: 'absen', sesi: r.sesi }); saveQ(); flush();
+  }
+}
 async function cek(raw) {
   if (VER) return;
   const kode = norm(raw); if (!kode) return;
@@ -429,8 +475,9 @@ async function cek(raw) {
   if (kode === last && now - lastAt < 2500) return;   // QR yang sama jangan diproses berulang
   last = kode; lastAt = now;
   const p = DB[kode] || null;
-  if (p && isPanitia(p)) return verify(p, kode);   // panitia: cek foto dulu → lalu absen ke server
-  return sendAbsen(kode, p);                         // peserta & mahasiswa: server pilih sesi + lock
+  if (p && isPanitia(p)) return verify(p, kode);   // panitia: cek foto dulu
+  if (p && CFG && CFG.jadwal) return absenCepat(p, kode);   // instan dari data lokal
+  return sendAbsen(kode, p);                         // tiket belum ada di HP: tanya server
 }
 
 // ====== KAMERA ======
