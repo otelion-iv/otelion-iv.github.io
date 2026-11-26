@@ -318,9 +318,9 @@ function catat(p, kode) {
   QUEUE.push({ kode, jam: p.waktu }); saveQ(); flush();
   return show('ok', p, kode, p.waktu);
 }
-function verify(p, kode, mode) {
-  VER = { p, kode, mode: mode || 'masuk' };
-  document.querySelector('.vhead span').textContent = (mode === 'pulang' ? 'VERIFIKASI ABSEN PULANG' : 'VERIFIKASI ABSEN MASUK');
+function verify(p, kode) {
+  VER = { p, kode };
+  document.querySelector('.vhead span').textContent = 'VERIFIKASI PANITIA';
   $('vFoto').innerHTML = FOTO[kode] ? `<img src="${FOTO[kode]}" alt="">` : esc(String(p.nama || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase());
   $('vNm').textContent = p.nama || '';
   $('vKd').textContent = kode + ' · ' + (p.kategori || '');
@@ -350,39 +350,87 @@ function catatPulang(p, kode) {
   return show('pulang', p, kode, p.pulang);
 }
 function tutupVer(ok) {
-  if (!VER) return; const { p, kode, mode } = VER; VER = null;
+  if (!VER) return; const { p, kode } = VER; VER = null;
   $('ver').classList.add('hide'); last = kode; lastAt = Date.now();
-  if (ok) { if (mode === 'pulang') catatPulang(p, kode); else catat(p, kode); } else { show('tolak', p, kode); api({ action: 'live', kode, pin: PIN, st: 'tolak' }).catch(() => {}); const kirimTolak = (n) => api({ action: 'tolak', kode, pin: PIN }).catch(() => { if (n < 3) setTimeout(() => kirimTolak(n + 1), 3000); }); kirimTolak(0); }
+  if (ok) { sendAbsen(kode, p); } else { renderAbsen({ status: 'tolak', nama: p && p.nama, kategori: p && p.kategori }, kode, p); api({ action: 'live', kode, pin: PIN, st: 'tolak' }).catch(() => {}); const kirimTolak = (n) => api({ action: 'tolak', kode, pin: PIN }).catch(() => { if (n < 3) setTimeout(() => kirimTolak(n + 1), 3000); }); kirimTolak(0); }
 }
 $('vYes').onclick = () => tutupVer(true);
 $('vNo').onclick = () => tutupVer(false);
+const sesiLabel = s => s === 'siang' ? 'siang' : s === 'pulang' ? 'pulang' : 'masuk';
+function renderAbsen(r, kode, p) {
+  const box = $('res'); box.classList.remove('flash'); void box.offsetWidth;
+  const nama = (r && r.nama) || (p && p.nama) || '';
+  const kat = (r && r.kategori) || (p && p.kategori) || '';
+  const isP = /panitia/i.test(String(kat));
+  const pf = pfImg(kode);
+  const st = r && r.status;
+  let hk = 'bad';
+  if (st === 'ok') {
+    hk = 'ok'; box.className = 'res ok flash';
+    const ses = sesiLabel(r.sesi);
+    const head = ses === 'pulang' ? 'Absen pulang tercatat — hati-hati di jalan!' : ses === 'siang' ? 'Absen siang tercatat — terima kasih!' : (isP ? 'Absen tercatat — selamat bertugas!' : 'Berhasil — selamat datang!');
+    box.innerHTML = `${pf || '<div class="ic">✓</div>'}${isP ? '<div class="apv">✓ ABSEN ' + ses.toUpperCase() + ' DISETUJUI</div>' : ''}<div class="big">${head}</div><div class="nm">${esc(nama)}</div><div class="sm">${esc(kat)} · ${esc(kode)} · ${ses} ${esc(r.waktu || '')}</div>`;
+    beep(1200, 90);
+    DB[kode] = DB[kode] || { nama, kategori: kat }; DB[kode].nama = nama; DB[kode].kategori = kat;
+    if (r.sesi === 'masuk') { DB[kode].status = 'Sudah masuk'; DB[kode].waktu = r.waktu; }
+    if (r.sesi === 'pulang') DB[kode].pulang = r.waktu;
+    saveDB();
+  } else if (st === 'dup') {
+    hk = 'dup'; box.className = 'res dup flash';
+    const ses = sesiLabel(r.sesi);
+    box.innerHTML = `${pf || '<div class="ic">⚠</div>'}<div class="big">Sudah absen ${ses} tadi</div><div class="nm">${esc(nama)}</div><div class="sm">Tercatat pukul ${esc(r.waktu || '-')}</div>`;
+    beep(440, 300);
+  } else if (st === 'belum') {
+    hk = 'dup'; box.className = 'res dup flash';
+    const ses = sesiLabel(r.sesi);
+    box.innerHTML = `${pf || '<div class="ic">⏰</div>'}<div class="big">Absen ${ses} belum dibuka</div><div class="nm">${esc(nama)}</div><div class="sm">Dibuka pukul ${esc(r.jam || '')} WIB</div>`;
+    beep(440, 300);
+  } else if (st === 'lewat') {
+    hk = 'bad'; box.className = 'res bad flash';
+    const ses = r.sesi ? ' ' + sesiLabel(r.sesi) : '';
+    box.innerHTML = `${pf || '<div class="ic">⛔</div>'}<div class="big">Sudah lewat jam absen${ses}</div><div class="nm">${esc(nama)}</div><div class="sm">Absen ditutup. Hubungi koordinator.</div>`;
+    beep(220, 500);
+  } else if (st === 'takada') {
+    hk = 'dup'; box.className = 'res dup flash';
+    box.innerHTML = `${pf || '<div class="ic">—</div>'}<div class="big">Tidak ada sesi absen hari ini</div><div class="nm">${esc(nama)}</div><div class="sm">${esc(kat)}</div>`;
+    beep(440, 300);
+  } else if (st === 'luar') {
+    hk = 'dup'; box.className = 'res dup flash';
+    box.innerHTML = `${pf || '<div class="ic">📅</div>'}<div class="big">Hari ini di luar jadwal acara</div><div class="nm">${esc(nama)}</div><div class="sm">Absen hanya 30 Nov – 4 Des 2026</div>`;
+    beep(440, 300);
+  } else if (st === 'tolak') {
+    hk = 'bad'; box.className = 'res bad flash';
+    box.innerHTML = `${pf || '<div class="ic">✕</div>'}<div class="big">Ditolak — bukan pemilik tiket</div><div class="nm">${esc(nama)}</div><div class="sm">Tiket ${esc(kode)} tidak dicatat.</div>`;
+    beep(220, 500);
+  } else {
+    hk = 'bad'; box.className = 'res bad flash';
+    box.innerHTML = `<div class="ic">✕</div><div class="big">Tiket tidak terdaftar</div><div class="sm">${esc(kode)}</div>`;
+    beep(220, 400);
+  }
+  addHist(hk, nama, kode); renderStats();
+}
+async function sendAbsen(kode, p) {
+  if (!navigator.onLine) { const box = $('res'); box.className = 'res bad'; box.innerHTML = '<div class="ic">!</div><div class="big">Tidak ada internet</div><div class="sm">Absen perlu koneksi. Sambungkan lalu scan ulang.</div>'; last = ''; return; }
+  show('wait');
+  try {
+    const r = await api({ action: 'absen', kode, pin: PIN });
+    if (r && r.status === 'pin') return showPin('PIN berubah, masukkan lagi.');
+    renderAbsen(r || {}, kode, p);
+  } catch (e) {
+    const box = $('res'); box.className = 'res bad';
+    box.innerHTML = `<div class="ic">!</div><div class="big">Tidak bisa cek server</div><div class="sm">Periksa internet lalu scan ulang</div>`;
+    last = '';
+  }
+}
 async function cek(raw) {
   if (VER) return;
   const kode = norm(raw); if (!kode) return;
   const now = Date.now();
   if (kode === last && now - lastAt < 2500) return;   // QR yang sama jangan diproses berulang
   last = kode; lastAt = now;
-  const p = DB[kode];
-  if (p) {
-    if (isPanitia(p)) return panitia(p, kode);
-    if (p.status === 'Sudah masuk') return show('dup', p, kode, p.waktu);
-    return catat(p, kode);
-  }
-  // tidak ada di data lokal: mungkin peserta baru — tanya server
-  show('wait');
-  try {
-    const r = await api({ action: 'checkin', kode, pin: PIN });
-    if (r && r.status === 'pin') return showPin('PIN berubah, masukkan lagi.');
-    if (r && (r.status === 'ok' || r.status === 'dup')) {
-      DB[kode] = { nama: r.nama, kategori: r.kategori, status: 'Sudah masuk', waktu: r.waktu }; saveDB();
-      return show(r.status, DB[kode], kode, r.waktu);
-    }
-    show('bad', null, kode);
-  } catch (e) {
-    const box = $('res'); box.className = 'res bad';
-    box.innerHTML = `<div class="ic">!</div><div class="big">Tiket tidak ada di data & tidak bisa cek server</div><div class="sm">Periksa internet lalu scan ulang</div>`;
-    last = '';
-  }
+  const p = DB[kode] || null;
+  if (p && isPanitia(p)) return verify(p, kode);   // panitia: cek foto dulu → lalu absen ke server
+  return sendAbsen(kode, p);                         // peserta & mahasiswa: server pilih sesi + lock
 }
 
 // ====== KAMERA ======

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ambil Tiket Mahasiswa · ÔTELION IV</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
+<style>
+  :root{--green:#0f5f37;--green2:#1b7a4b;--orange:#c8641e;--gold:#d9a441;--maroon:#8b2a1a;--cream:#fbf6ec;--ink:#1f2420;--mute:#6f736d;--line:#ebe4d6}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;font-family:Inter,system-ui,sans-serif;background:var(--cream);color:var(--ink);display:flex;flex-direction:column}
+  .stripe{height:4px;background:linear-gradient(90deg,var(--maroon) 0 33%,var(--gold) 33% 66%,var(--green) 66%)}
+  main{flex:1;display:flex;align-items:center;justify-content:center;padding:28px 18px}
+  .box{width:100%;max-width:400px;text-align:center}
+  .logos{display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:14px}
+  .logos .pr{height:34px}.logos .sep{width:1px;height:34px;background:var(--line)}.logos .mk{height:78px}
+  .kick{font:700 11px Inter;letter-spacing:.28em;text-transform:uppercase;color:var(--gold);margin-top:6px}
+  h1{font:700 34px/1.05 'Cormorant Garamond',serif;color:var(--green);margin:8px 0 6px}
+  .sub{color:var(--mute);font-size:14px;line-height:1.5;margin:0 auto 22px;max-width:320px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:22px 20px;box-shadow:0 10px 30px rgba(31,36,32,.06);text-align:left}
+  label{display:block;font:700 11px Inter;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);margin-bottom:8px}
+  input{width:100%;padding:15px 16px;border:1.5px solid var(--line);border-radius:14px;font:700 22px 'JetBrains Mono',monospace;letter-spacing:.08em;text-align:center;color:var(--ink);background:#fff}
+  input:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 4px rgba(15,95,55,.12)}
+  .btn{display:flex;align-items:center;justify-content:center;width:100%;margin-top:14px;padding:15px;border:0;border-radius:14px;background:var(--green);color:#fff;font:700 16px Inter;cursor:pointer;text-decoration:none}
+  .btn:disabled{opacity:.6}
+  .btn.ghost{background:#fff;color:var(--green);border:1px solid #cfe0d5;margin-top:10px}
+  .msg{min-height:20px;margin-top:12px;font-size:13.5px;font-weight:600;text-align:center;line-height:1.45}
+  .msg.err{color:#b3261e}
+  .me{text-align:center}
+  .me .hi{font:600 12px Inter;letter-spacing:.14em;text-transform:uppercase;color:var(--mute)}
+  .me .nm{font:700 28px/1.15 'Cormorant Garamond',serif;color:var(--ink);margin:6px 0 2px}
+  .me .kd{font:700 13px 'JetBrains Mono',monospace;color:var(--green)}
+  .tip{margin-top:18px;font-size:12.5px;color:var(--mute);line-height:1.5}
+  footer{text-align:center;padding:16px;font:italic 600 14px 'Cormorant Garamond',serif;color:#9a8f78}
+  .hide{display:none!important}
+</style>
+</head>
+<body>
+<div class="stripe"></div>
+<main><div class="box">
+  <div class="logos"><img class="pr" src="assets/logo-pradita_1.png" alt="Pradita University"><div class="sep"></div><img class="mk" src="assets/logo-otelion-mark_1.png" alt="ÔTELION IV"></div>
+  <div class="kick">Khusus Mahasiswa</div>
+  <h1>Ambil Tiket Kamu</h1>
+  <p class="sub">Masukkan NIM untuk membuka e-ticket absensi mahasiswa ÔTELION IV.</p>
+
+  <div class="card" id="form">
+    <label for="nim">NIM</label>
+    <input id="nim" inputmode="numeric" autocomplete="off" placeholder="Ketik NIM kamu" maxlength="20">
+    <button class="btn" id="go">Ambil tiket</button>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="card me hide" id="saved">
+    <div class="hi">Tiket tersimpan di HP ini</div>
+    <div class="nm" id="sNama"></div>
+    <div class="kd" id="sKode"></div>
+    <a class="btn" id="open">Buka tiket saya</a>
+    <button class="btn ghost" id="ganti">Bukan saya / ganti NIM</button>
+  </div>
+
+  <p class="tip">Tunjukkan QR tiket saat absen di loket (masuk, siang, dan pulang). Cukup scan QR — tanpa pencocokan foto.</p>
+</div></main>
+<footer>Hotelier Competition 2026 · Heritage Reimagined</footer>
+
+<script>
+const API = 'https://script.google.com/macros/s/AKfycbw_vgVzfZj8hOciHzvvF0llkaY8UqUPGWp1Ga99vZOwS0P2fT_uV7MOKd4NSMMeUkHH/exec';
+function jsonp(params) {
+  return new Promise((res, rej) => {
+    const cb = 'cb' + Math.random().toString(36).slice(2), s = document.createElement('script');
+    const t = setTimeout(() => { cleanup(); rej(new Error('timeout')); }, 20000);
+    function cleanup() { clearTimeout(t); delete window[cb]; s.remove(); }
+    window[cb] = d => { cleanup(); res(d); };
+    s.onerror = () => { cleanup(); rej(new Error('net')); };
+    s.src = API + '?' + new URLSearchParams(Object.assign({}, params, { callback: cb }));
+    document.head.appendChild(s);
+  });
+}
+function api(params) {
+  return fetch(API + '?' + new URLSearchParams(params)).then(r => { if (!r.ok) throw 0; return r.json(); }).catch(() => jsonp(params));
+}
+const $ = id => document.getElementById(id);
+const KEY = 'tiketSaya';
+function get() { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { return null; } }
+function set(v) { try { v ? localStorage.setItem(KEY, JSON.stringify(v)) : localStorage.removeItem(KEY); } catch (e) {} }
+const link = k => 'tiket?kode=' + encodeURIComponent(k);
+function showSaved(t) {
+  $('form').classList.add('hide'); $('saved').classList.remove('hide');
+  $('sNama').textContent = t.nama || ''; $('sKode').textContent = t.kode; $('open').href = link(t.kode);
+}
+async function ambil() {
+  if ($('go').disabled) return;
+  const nim = $('nim').value.replace(/\D/g, '');
+  const msg = $('msg'); msg.className = 'msg';
+  if (nim.length < 6) { msg.className = 'msg err'; msg.textContent = 'NIM belum lengkap.'; return; }
+  const b = $('go'); b.disabled = true; b.textContent = 'Mencari…'; msg.textContent = '';
+  try {
+    const r = await api({ action: 'ambil', nim });
+    if (r && r.status === 'ok') { const t = { kode: r.kode, nama: r.nama }; set(t); try { const C = JSON.parse(localStorage.getItem('tiketCache') || '{}') || {}; C[r.kode] = { tiket: { kode: r.kode, nama: r.nama, kategori: r.kategori || 'Mahasiswa' }, acara: r.acara || {} }; localStorage.setItem('tiketCache', JSON.stringify(C)); } catch (e) {} location.href = link(t.kode); return; }
+    msg.className = 'msg err';
+    msg.textContent = 'NIM ini tidak terdaftar sebagai mahasiswa. Cek lagi, atau hubungi panitia.';
+  } catch (e) {
+    msg.className = 'msg err'; msg.textContent = 'Tidak bisa terhubung. Periksa internet lalu coba lagi.';
+  }
+  b.disabled = false; b.textContent = 'Ambil tiket';
+}
+$('go').onclick = ambil;
+$('nim').addEventListener('keydown', e => { if (e.key === 'Enter') ambil(); });
+$('ganti').onclick = () => { set(null); $('saved').classList.add('hide'); $('form').classList.remove('hide'); $('nim').value = ''; $('nim').focus(); };
+$('nim').addEventListener('input', () => { if ($('nim').value.replace(/\D/g, '').length === 10) ambil(); });
+window.addEventListener('pageshow', () => { const b = $('go'); b.disabled = false; b.textContent = 'Ambil tiket'; $('msg').textContent = ''; const t = get(); if (t && t.kode) showSaved(t); });
+const saved = get(); if (saved && saved.kode) showSaved(saved);
+api({ action: 'ambil', nim: '0000000' }).catch(() => {});
+</script>
+</body>
+</html>
