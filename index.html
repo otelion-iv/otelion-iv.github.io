@@ -432,7 +432,7 @@ async function sendAbsen(kode, p) {
 // ====== JADWAL LOKAL (supaya hasil scan instan; server tetap memvalidasi di belakang) ======
 let CFG = LS.get('tiketCfg', null);
 async function loadCfg() { try { const r = await api({ action: 'cfg' }); if (r && r.jadwal) { CFG = r; LS.set('tiketCfg', CFG); } } catch (e) {} }
-setInterval(() => { if (!$('app').classList.contains('hide')) loadCfg(); }, 60000);
+setInterval(() => { if (!$('app').classList.contains('hide')) loadCfg(); }, 15000);
 const pad2 = n => ('0' + n).slice(-2);
 function hariIdx() {
   if (!CFG || !CFG.tanggal) return -1;
@@ -462,6 +462,8 @@ function absenLokal(p, kode) {
 }
 function absenCepat(p, kode) {
   const r = absenLokal(p, kode);
+  // jadwal di HP bisa ketinggalan (baru diubah di spreadsheet): kalau ditolak, pastikan ke server dulu
+  if (r.status === 'luar' || r.status === 'belum' || r.status === 'lewat' || r.status === 'takada') { loadCfg(); return sendAbsen(kode, p); }
   renderAbsen(r, kode, p);
   if (r.status === 'ok') {
     api({ action: 'live', kode, pin: PIN, st: r.sesi === 'pulang' ? 'pulang' : 'ok' }).catch(() => {});
