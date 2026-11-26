@@ -431,19 +431,20 @@ function notif(kind,t,waktu){ const k=String(t.kategori||''), pan=/panitia/i.tes
   try{ const a=new (window.AudioContext||window.webkitAudioContext)(), o=a.createOscillator(), g=a.createGain(); o.frequency.value=kind==='bad'?260:1046; g.gain.value=.05; o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime+(kind==='bad'?.4:.15)); }catch(e){}
 }
 document.getElementById('ntx').onclick=()=>document.getElementById('nt').classList.remove('show');
-function pantau(t){ let base=null, done=false, inflight=0, fastUntil=Date.now()+5*60000;
-  const wake=()=>{ fastUntil=Date.now()+5*60000; };
+function pantau(t){ let base=null, done=false, inflight=0, fastUntil=Date.now()+2*60000;
+  const wake=()=>{ fastUntil=Date.now()+2*60000; };
   document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') wake(); });
   ['touchstart','click','scroll'].forEach(e=>window.addEventListener(e,wake,{passive:true}));
   const handle=r=>{ if(!r||r.status!=='ok') return; if(!base){ base=r; return; }
     const baruTolak=r.tolak>base.tolak+20000; if(r.tolak>base.tolak) base.tolak=r.tolak;
-    if(r.pulang&&!base.pulang) notif('pulang',t,r.pulang);
-    else if(!base.masuk&&r.masuk) notif('ok',t,r.waktu);
+    if(r.pulang&&!base.pulang){ notif('pulang',t,r.pulang); fastUntil=0; }
+    else if(!base.masuk&&r.masuk){ notif('ok',t,r.waktu); fastUntil=0; }
     else if(baruTolak) notif('bad',t);
     base.masuk=r.masuk; base.pulang=r.pulang; };
   const cek=async()=>{ inflight++; try{ handle(await api({action:'cek',kode:t.kode})); }catch(e){} inflight--; };
-  const loop=()=>{ if(done) return; const vis=document.visibilityState==='visible', fast=vis&&Date.now()<fastUntil;
-    if(vis&&inflight<(fast?2:1)) cek(); setTimeout(loop, fast?900:(vis?5000:3000)); };
+  // 1 permintaan per HP; cepat hanya 2 menit setelah layar disentuh, berhenti cepat setelah notifikasi muncul
+  const loop=async()=>{ if(done) return; const vis=document.visibilityState==='visible', fast=vis&&Date.now()<fastUntil;
+    if(vis&&!inflight) await cek(); setTimeout(loop, fast?400:(vis?15000:20000)); };
   loop();
 }
 function waStat(){const el=document.getElementById('wastat'); if(!el) return; const bisa=LIST.filter(t=>waLink(t.kontak,t,ACARA)).length, sudah=LIST.filter(t=>t.wa).length; el.className='stat'+(sudah>=bisa&&bisa?' g':''); el.innerHTML=`<b>${sudah}<small style="font-size:15px;color:var(--mute)">/${bisa}</small></b><span>Sudah di-WA</span>`;}
