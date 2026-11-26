@@ -175,6 +175,10 @@ let QUEUE = LS.get('tiketQueue', []);    // check-in yang belum terkirim ke shee
 let lastSync = 0, syncing = false;
 let FOTO = LS.get('tiketFoto', {}), FV = LS.get('tiketFV', '');
 const isPanitia = p => /panitia/i.test(String((p && p.kategori) || ''));
+// ====== MODE LOKET (?loket=panitia|peserta|mahasiswa) ======
+const LOKET = ({ panitia: 'Panitia', peserta: 'Peserta', mahasiswa: 'Mahasiswa' })[(new URLSearchParams(location.search).get('loket') || '').toLowerCase()] || '';
+const katOf = p => String((p && p.kategori) || '').trim();
+if (LOKET) { document.querySelector('#app h1').textContent = 'Scan Tiket · Loket ' + LOKET; document.title = 'Loket ' + LOKET + ' · ÔTELION IV'; }
 const pfImg = kode => FOTO[kode] ? `<img class="pf" src="${FOTO[kode]}" alt="">` : '';
 async function loadFotos(fv) { try { const r = await api({ action: 'fotos', pin: PIN }); if (r && r.foto) { FOTO = r.foto; FV = fv || r.fv; try { LS.set('tiketFoto', FOTO); LS.set('tiketFV', FV); } catch (e) {} } } catch (e) {} }
 function saveDB() { LS.set('tiketDB', DB); }
@@ -198,10 +202,10 @@ async function syncDB() {
   syncing = false; renderStats(); renderSync();
 }
 function renderStats() {
-  const all = Object.values(DB); const total = all.length; const masuk = all.filter(p => p.status === 'Sudah masuk').length;
+  const all = Object.values(DB).filter(x => !LOKET || katOf(x) === LOKET); const total = all.length; const masuk = all.filter(p => p.status === 'Sudah masuk').length;
   $('sTotal').textContent = total; $('sIn').textContent = masuk; $('sOut').textContent = total - masuk;
   const p = total ? Math.round(masuk / total * 100) : 0;
-  $('bar').style.width = p + '%'; $('pct').textContent = p + '% peserta sudah hadir';  const K = {};  all.forEach(x => { const r = String(x.kategori || 'Lainnya').trim(); const k = r.length <= 3 ? r.toUpperCase() : r.charAt(0).toUpperCase() + r.slice(1).toLowerCase(); K[k] = K[k] || [0, 0]; K[k][0]++; if (x.status === 'Sudah masuk') K[k][1]++; });  $('kat').innerHTML = Object.keys(K).sort().map(k => { const t = K[k][0], h = K[k][1], s = t - h; return '<div><b>' + esc(k) + '</b> ' + h + '/' + t + '<br>' + (s ? '<span class="ku">kurang ' + s + ' orang</span>' : '<span class="ok">✓ lengkap</span>') + '</div>'; }).join('');
+  $('bar').style.width = p + '%'; $('pct').textContent = p + '% ' + (LOKET ? LOKET.toLowerCase() : 'peserta') + ' sudah hadir';  const K = {};  all.forEach(x => { const r = String(x.kategori || 'Lainnya').trim(); const k = r.length <= 3 ? r.toUpperCase() : r.charAt(0).toUpperCase() + r.slice(1).toLowerCase(); K[k] = K[k] || [0, 0]; K[k][0]++; if (x.status === 'Sudah masuk') K[k][1]++; });  $('kat').innerHTML = Object.keys(K).sort().map(k => { const t = K[k][0], h = K[k][1], s = t - h; return '<div><b>' + esc(k) + '</b> ' + h + '/' + t + '<br>' + (s ? '<span class="ku">kurang ' + s + ' orang</span>' : '<span class="ok">✓ lengkap</span>') + '</div>'; }).join('');
 }
 function renderSync() {
   const el = $('sync'); if (!el) return;
@@ -470,6 +474,12 @@ function absenCepat(p, kode) {
     QUEUE.push({ kode, jam: r.waktu, act: 'absen', sesi: r.sesi }); saveQ(); flush();
   }
 }
+function salahLoket(p, kode) {
+  const box = $('res'); box.classList.remove('flash'); void box.offsetWidth;
+  box.className = 'res bad flash';
+  box.innerHTML = `<div class="ic">↪</div><div class="big">Bukan loket ini</div><div class="nm">${esc(p.nama)}</div><div class="sm">Tiket ${esc(katOf(p))} · arahkan ke <b>Loket ${esc(katOf(p))}</b></div>`;
+  beep(220, 500); addHist('bad', (p.nama || '') + ' (salah loket)', kode);
+}
 async function cek(raw) {
   if (VER) return;
   const kode = norm(raw); if (!kode) return;
@@ -477,6 +487,7 @@ async function cek(raw) {
   if (kode === last && now - lastAt < 2500) return;   // QR yang sama jangan diproses berulang
   last = kode; lastAt = now;
   const p = DB[kode] || null;
+  if (LOKET && p && katOf(p) !== LOKET) return salahLoket(p, kode);
   if (p && isPanitia(p)) return verify(p, kode);   // panitia: cek foto dulu
   if (p && CFG && CFG.jadwal && LS.get('tiketDBTgl', '') === hariIni()) return absenCepat(p, kode);   // instan dari data lokal
   return sendAbsen(kode, p);                         // tiket belum ada di HP: tanya server
