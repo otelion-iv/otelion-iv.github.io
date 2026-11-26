@@ -166,6 +166,7 @@ let PIN = LS.get('tiketPinJ', null) || (function(){ try { return localStorage.ge
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const jam = () => new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+const hariIni = () => { const d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
 const norm = s => { const u = String(s || '').toUpperCase(); const m = u.match(/TKT-[A-Z0-9]{6}/); return m ? m[0] : u.trim(); };
 
 // ====== DATA LOKAL (supaya hasil scan instan) ======
@@ -187,10 +188,10 @@ async function syncDB() {
     const next = {};
     (r.peserta || []).forEach(p => {
       const old = DB[p.kode];
-      next[p.kode] = { nama: p.nama, kategori: p.kategori, status: p.status, waktu: p.waktu || '', pulang: p.pulang || '', siang: (old && old.siang) || '' };
+      next[p.kode] = { nama: p.nama, kategori: p.kategori, status: p.status, waktu: p.waktu || '', pulang: p.pulang || '', siang: (old && old.siangTgl === hariIni() && old.siang) || '', siangTgl: (old && old.siangTgl === hariIni()) ? old.siangTgl : '' };
       if (pending.has(p.kode) && old) { next[p.kode].status = old.status; next[p.kode].waktu = old.waktu; next[p.kode].pulang = old.pulang || next[p.kode].pulang; }
     });
-    DB = next; saveDB(); lastSync = Date.now();
+    DB = next; saveDB(); lastSync = Date.now(); LS.set('tiketDBTgl', hariIni());
     if (r.jam) { JAM = r.jam; LS.set('tiketJam', JAM); }
     if ((r.fv || '') !== FV) { if (r.fv && !r.fv.startsWith('0-')) loadFotos(r.fv); else { FOTO = {}; FV = r.fv || ''; try { LS.set('tiketFoto', FOTO); LS.set('tiketFV', FV); } catch (e) {} } }
   } catch (e) {}
@@ -357,7 +358,7 @@ function catatPulang(p, kode) {
 function tutupVer(ok) {
   if (!VER) return; const { p, kode } = VER; VER = null;
   $('ver').classList.add('hide'); last = kode; lastAt = Date.now();
-  if (ok) { if (CFG && CFG.jadwal) absenCepat(p, kode); else sendAbsen(kode, p); } else { renderAbsen({ status: 'tolak', nama: p && p.nama, kategori: p && p.kategori }, kode, p); api({ action: 'live', kode, pin: PIN, st: 'tolak' }).catch(() => {}); const kirimTolak = (n) => api({ action: 'tolak', kode, pin: PIN }).catch(() => { if (n < 3) setTimeout(() => kirimTolak(n + 1), 3000); }); kirimTolak(0); }
+  if (ok) { if (CFG && CFG.jadwal && LS.get('tiketDBTgl', '') === hariIni()) absenCepat(p, kode); else sendAbsen(kode, p); } else { renderAbsen({ status: 'tolak', nama: p && p.nama, kategori: p && p.kategori }, kode, p); api({ action: 'live', kode, pin: PIN, st: 'tolak' }).catch(() => {}); const kirimTolak = (n) => api({ action: 'tolak', kode, pin: PIN }).catch(() => { if (n < 3) setTimeout(() => kirimTolak(n + 1), 3000); }); kirimTolak(0); }
 }
 $('vYes').onclick = () => tutupVer(true);
 $('vNo').onclick = () => tutupVer(false);
@@ -379,7 +380,7 @@ function renderAbsen(r, kode, p) {
     DB[kode] = DB[kode] || { nama, kategori: kat }; DB[kode].nama = nama; DB[kode].kategori = kat;
     if (r.sesi === 'masuk') { DB[kode].status = 'Sudah masuk'; DB[kode].waktu = r.waktu; }
     if (r.sesi === 'pulang') DB[kode].pulang = r.waktu;
-    if (r.sesi === 'siang') DB[kode].siang = r.waktu;
+    if (r.sesi === 'siang') { DB[kode].siang = r.waktu; DB[kode].siangTgl = hariIni(); }
     saveDB();
   } else if (st === 'dup') {
     hk = 'dup'; box.className = 'res dup flash';
@@ -476,7 +477,7 @@ async function cek(raw) {
   last = kode; lastAt = now;
   const p = DB[kode] || null;
   if (p && isPanitia(p)) return verify(p, kode);   // panitia: cek foto dulu
-  if (p && CFG && CFG.jadwal) return absenCepat(p, kode);   // instan dari data lokal
+  if (p && CFG && CFG.jadwal && LS.get('tiketDBTgl', '') === hariIni()) return absenCepat(p, kode);   // instan dari data lokal
   return sendAbsen(kode, p);                         // tiket belum ada di HP: tanya server
 }
 
