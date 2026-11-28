@@ -94,10 +94,16 @@ async function ambil() {
   if (nim.length < 6) { msg.className = 'msg err'; msg.textContent = 'NIM belum lengkap.'; return; }
   const b = $('go'); b.disabled = true; b.textContent = 'Mencari…'; msg.textContent = '';
   try {
-    const r = await api({ action: 'ambil', nim });
+    let r = null;
+    for (let i = 0; i < 3; i++) {
+      try { r = await api({ action: 'ambil', nim, _: Date.now() }); } catch (e) { r = null; }
+      if (r && (r.status === 'ok' || r.status === 'notfound')) break;
+      await new Promise(ok => setTimeout(ok, 700));
+    }
+    if (!r) throw 0;
     if (r && r.status === 'ok') { const t = { kode: r.kode, nama: r.nama }; set(t); try { const C = JSON.parse(localStorage.getItem('tiketCache') || '{}') || {}; C[r.kode] = { tiket: { kode: r.kode, nama: r.nama, kategori: r.kategori || 'Panitia' }, acara: r.acara || {} }; localStorage.setItem('tiketCache', JSON.stringify(C)); } catch (e) {} location.href = link(t.kode); return; }
     msg.className = 'msg err';
-    msg.textContent = 'NIM ini tidak terdaftar sebagai panitia. Cek lagi, atau hubungi admin panitia.';
+    msg.textContent = r.status === 'notfound' ? 'NIM ini tidak terdaftar sebagai panitia. Cek lagi, atau hubungi admin panitia.' : 'Server sedang sibuk, coba tekan Ambil tiket sekali lagi.';
   } catch (e) {
     msg.className = 'msg err'; msg.textContent = 'Tidak bisa terhubung. Periksa internet lalu coba lagi.';
   }
